@@ -18,6 +18,7 @@
 # 下载 xPack GNU Arm Embedded GCC 并解压到本地（示例为 13.2.1）
 curl -L -o arm-gcc.tar.gz \
   https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1/xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+# 下载 xPack GNU Arm Embedded GCC 并解压到本地（示例为 13.2.1）
 tar xzf arm-gcc.tar.gz
 ```
 
@@ -74,20 +75,26 @@ gcc -std=gnu11 -O2 verify_fix.c -lm -o verify_fix && ./verify_fix
 - 末端姿态误差 < 0.04°（旋转解非常精确）
 - 但约 9% 的点末端位置误差很大（最大 ~354 mm）
 
-**(3) 缺陷定位（数据驱动）**：对误差大的点逐组检查内部 4 组解，发现**其中 3 组位置误差精确为 0 mm，只有 1 组是误差上百 mm 的伪根**，而固件的最优解选择（`robot_kinematics_get_optimal_result`）**只按“与当前关节角加权距离”挑选、不校验末端位置**，于是约 9% 情况下选到了伪根。
+**(3) 缺陷定位（数据驱动）**：对误差大的点逐组检查内部 4 组解，发现**其中 3 组位置误差精确为 0 mm，只有 1 组是误差上百 mm 的伪根**，而固件的最优解选择（`robot_kinematics_get_optimal_result`）**只按"与当前关节角加权距离"挑选、不校验末端位置**，于是约 9% 情况下选到了伪根。
 
 - 伪根来源：`theta2` 用半角法（`u=tan(θ/2)`）平方求解时引入的额外根；
-- 修复验证：在选解中增加一次“正运动学末端位置残差 < 1 mm”的过滤，500 组随机点：
+- 修复验证：在选解中增加一次"正运动学末端位置残差 < 1 mm"的过滤，500 组随机点：
 
 ```
 固件原始（仅按关节角距离选解）：位置误差 <1mm 占 91.1%，最大 354 mm
 加入位置残差校验后：           位置误差 <1mm 占 100%，最大 0.01 mm
 ```
 
-### 给固件的改进建议（不改动原算法，仅在选解处）
+### 缺陷修复（已落地为 patch，见 `patch/`）
 
-在 `robot_kinematics_get_optimal_result()` 遍历候选解时，先用正运动学（或直接代入位置方程）算末端位置残差，
-把残差超过阈值（如 1 mm）的解判为无效，再在剩余解中按关节角距离选最近者。这样可消除半角法伪根，把逆解位置可靠性提升到接近 100%。
+上面的改进建议**已实现并交叉编译验证通过**，见 [`patch/`](patch/)：
+
+- 在逆解计算完成后（弧度域、角度制转换之前），用 MDH 正运动学反推每组候选解的末端位置，残差 > 1 mm 判为伪根并置无效；
+- 不改动原解析算法，仅在选解前多一道几何校验；
+- 回归验证（完整 `robot_kinematics_inverse`，500 组）：**凡被接受的目标位置误差 100% < 1 mm（最大 0.0088 mm）**；约 12% 目标因「唯一限位内解是伪根、真解超限位」被正确判定为不可达而拒绝执行（宁可不做、不做错）；
+- 交叉编译修复版固件零错误，`text` 仅 +640 B（Flash 仍 ~10%）。
+
+已生成的修复版可烧录固件：`zero_robotic_arm_stm32f407_fix.bin/.elf`（见交付文件）。
 
 ---
 
@@ -103,6 +110,13 @@ stm32_firmware/
 │   ├── usart.h              # LOG -> printf 桩
 │   ├── main.c               # 复位位姿反算 + 可达性
 │   ├── roundtrip.c          # FK→IK 闭环往返验证
-│   └── verify_fix.c         # 选解缺陷定位 + 位置校验修复验证
-└── zero_robotic_arm_stm32f407.bin/.elf   # 已交叉编译的固件（二进制，见交付文件）
+│   └── verify_fix.c         # 选解缺陷定位 + 位置校验修复验证（口径：手动位置校验）
+├── patch/                   # IK 选解缺陷修复（已落地、可审阅、已验证）
+│   ├── ik_select_fix.patch  # diff -u 统一格式补丁
+│   ├── robot_kinematics.c   # 打补丁后的固件源码
+│   ├── verify_patched.c     # 回归验证（口径：完整 robot_kinematics_inverse）
+│   ├── diag_patch.c         # 无解点诊断（伪根 vs 真解超限位）
+│   └── README.md
+├── zero_robotic_arm_stm32f407.bin/.elf        # 已交叉编译固件（原版）
+└── zero_robotic_arm_stm32f407_fix.bin/.elf    # 已交叉编译固件（修复版）
 ```

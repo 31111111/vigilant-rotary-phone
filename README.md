@@ -37,7 +37,7 @@ python3 kuka_iiwa_grasp_demo.py
 python3 stm32_6dof_arm_demo.py
 ```
 
-> demo 3 需要 `stm32_arm/meshes/*.STL` 模型文件（见下方“模型获取”）。
+> demo 3 需要 `stm32_arm/meshes/*.STL` 模型文件（见下方"模型获取"）。
 
 合成视频（可选）：
 
@@ -95,7 +95,7 @@ ffmpeg -framerate 20 -i frames_6dof/frame_%04d.png -c:v libx264 -pix_fmt yuv420p
 - **PC 端验证固件 IK**：把固件**未改动**的逆运动学源码 `robot_kinematics.c` 用普通 gcc 在 x86 上编译运行：
   - 复位位姿反算 = `[90,90,-90,0,90,0]°`，与固件复位关节角**误差 0**；
   - 200 组 FK→IK 闭环，姿态误差 < 0.04°；
-  - **定位到一处真实缺陷**：4 组解析解中含半角法 `tan(θ/2)` 引入的伪根，而原选解只按关节角距离挑选、不校验末端位置，约 9% 情况选到伪根（位置误差可达 354 mm）；在选解中加入“末端位置残差 < 1 mm”校验后，500 组随机点位置误差 <1 mm 的比例从 **91.1% 提升到 100%（最大 0.01 mm）**。
+  - **定位并修复一处真实缺陷**：4 组解析解中含半角法 `tan(θ/2)` 引入的伪根，而原选解只按关节角距离挑选、不校验末端位置，约 9% 情况选到伪根（位置误差可达 354 mm）。修复已在 [`stm32_firmware/patch/`](stm32_firmware/patch/) 落地：选解前用 MDH 正运动学校验末端位置残差 <1 mm，交叉编译零错误，**被接受的目标位置误差 100% <1 mm（最大 0.0088 mm）**，并已生成修复版可烧录固件。
 
 详见 [`stm32_firmware/README.md`](stm32_firmware/README.md)。
 
@@ -107,7 +107,7 @@ ffmpeg -framerate 20 -i frames_6dof/frame_%04d.png -c:v libx264 -pix_fmt yuv420p
 ├── kuka_iiwa_grasp_demo.py   # demo 2：KUKA 抓取-搬运
 ├── stm32_6dof_arm_demo.py    # demo 3：STM32 6DOF 逆运动学画圆
 ├── stm32_arm/urdf/arm.urdf   # demo 3：6DOF 机械臂 URDF（修正 mesh 路径）
-├── stm32_arm/meshes/*.STL    # demo 3：6DOF 机械臂网格（需自取，见“模型获取”）
+├── stm32_arm/meshes/*.STL    # demo 3：6DOF 机械臂网格（需自取，见"模型获取"）
 ├── stm32_firmware/           # demo 4：STM32 固件交叉编译 Makefile + PC 端 IK 验证
 ├── README.md
 ├── kuka_iiwa_ik.mp4          # demo 1 视频
