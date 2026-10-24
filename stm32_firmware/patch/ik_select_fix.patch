@@ -1,0 +1,76 @@
+--- pc_ik_test/robot_kinematics.c	2026-10-24 23:20:32.253366000 +0800
++++ patch/robot_kinematics.c	2026-10-24 23:40:20.532574000 +0800
+@@ -272,6 +272,65 @@
+ 	}
+ }
+ 
++/* ============================================================
++ * IK 选解缺陷修复（末端位置残差校验）
++ *
++ * 问题：解析逆解由半角法 tan(θ/2) 平方引入额外伪根，原选解只按
++ *       关节角加权距离挑选、不校验末端位置，约 9% 情况会选中伪根
++ *       （末端位置误差可达数百 mm）。
++ * 验证：见 stm32_firmware/pc_ik_test/verify_fix.c —— 增加位置残差
++ *       校验后，500 组随机点位置误差 <1mm 的比例从 91.1% 提升到 100%。
++ * 修复：逆解计算完成后（result 仍为弧度），用 MDH 正运动学反推每组
++ *       解的末端位置并与目标平移比较，残差超过阈值即判为伪根、标记
++ *       无效。不改动原解析算法，仅在选解前多一道几何校验。
++ * ============================================================ */
++#define ROBOT_IK_POS_RESIDUAL_THRESHOLD_MM (1.0f)
++
++/* MDH 单连杆变换：A = Rx(α)·Rz(θ)·T([a,0,d])，θ 为关节角（弧度） */
++static void robot_kinematics_link_fk(float a, float al, float d, float th, float m[4][4])
++{
++	float ct = cos(th), st = sin(th), ca = cos(al), sa = sin(al);
++	m[0][0]=ct;    m[0][1]=-st;  m[0][2]=0;     m[0][3]=a;
++	m[1][0]=st*ca; m[1][1]=ct*ca; m[1][2]=-sa;  m[1][3]=-sa*d;
++	m[2][0]=st*sa; m[2][1]=ct*sa; m[2][2]=ca;   m[2][3]=ca*d;
++	m[3][0]=0;     m[3][1]=0;     m[3][2]=0;    m[3][3]=1;
++}
++
++/* 用一组关节角（弧度）反推末端位置，返回与目标平移的距离残差（mm） */
++static float robot_kinematics_solution_pos_residual(const float q_rad[ROBOT_MAX_JOINT_NUM])
++{
++	float T[4][4] = {{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}};
++	for (int i = 0; i < ROBOT_MAX_JOINT_NUM; i++) {
++		float A[4][4], P[4][4];
++		robot_kinematics_link_fk(D_H[i][0], D_H[i][1], D_H[i][2], q_rad[i], A);
++		for (int r = 0; r < 4; r++) {
++			for (int c = 0; c < 4; c++) {
++				float s = 0;
++				for (int k = 0; k < 4; k++) s += T[r][k] * A[k][c];
++				P[r][c] = s;
++			}
++		}
++		for (int r = 0; r < 4; r++) {
++			for (int c = 0; c < 4; c++) T[r][c] = P[r][c];
++		}
++	}
++	float ex = T[0][3] - g_robot_kinematics.T[0][3];
++	float ey = T[1][3] - g_robot_kinematics.T[1][3];
++	float ez = T[2][3] - g_robot_kinematics.T[2][3];
++	return sqrt(ex*ex + ey*ey + ez*ez);
++}
++
++/* 位置残差校验：将伪根对应的解标记为无效（须在 radians_to_degrees 之前调用） */
++static void robot_kinematics_position_check(void)
++{
++	for (int i = 0; i < ROBOT_KINEMATICS_RESULT_NUM; i++) {
++		if (robot_kinematics_solution_pos_residual(g_robot_kinematics.result[i])
++			> ROBOT_IK_POS_RESIDUAL_THRESHOLD_MM) {
++			g_robot_kinematics.result_invalid_mask |= (1 << i);	/* 伪根 */
++		}
++	}
++}
++
+ /**
+  * @brief 计算机械臂各关节的角度。
+  * 
+@@ -443,6 +502,7 @@
+ 	memcpy(g_robot_kinematics.T, T_target, sizeof(float)*16);
+ 
+ 	robot_kinematics_calc();
++	robot_kinematics_position_check();	/* 修复：末端位置残差校验，剔除半角法伪根 */
+ 	if (show) {
+ 		LOG("target:[%f %f %f]\n", T_target[4 * 0 + 3], T_target[4 * 1 + 3], T_target[4 * 2 + 3]);
+ 		LOG("robot kinematics result(rad):\n");
