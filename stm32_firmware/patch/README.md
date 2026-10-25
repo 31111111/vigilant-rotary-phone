@@ -25,8 +25,11 @@
 |---|---|
 | `ik_select_fix.patch` | `diff -u` 生成的统一格式补丁（原版 ↔ 修复版） |
 | `robot_kinematics.c` | 打补丁后的固件源码（可直接替换原文件） |
+| `robot_kinematics.h` | 对应头文件 |
+| `robot.h` / `usart.h` | PC 编译桩头文件（去 FreeRTOS/硬件依赖，LOG→printf） |
 | `verify_patched.c` | 回归验证：500 组 FK→IK 走完整 `robot_kinematics_inverse` |
 | `diag_patch.c` | 诊断：对「返回无解」的目标点打印 4 组解的残差与限位状态 |
+| `Makefile` | x86 构建：`make && ./verify_patched`（同时构建 `diag_patch`） |
 
 ## 关于「无解」（重要，修复的正确行为）
 
@@ -42,7 +45,7 @@
 
 修复前固件会返回**组0 伪根**（位置错 165mm）；修复后正确判定「该位姿在当前限位构型下不可达」并**拒绝执行**。工程上这是期望行为：**宁可不做，不做错**。
 
-> 注：另有约 62 组真解超限位，属于「IK 解析解分支在限位构型下覆盖不全」的独立问题，不在本 patch 范围。
+> 注：另有约 62 组真解超限位，属于「IK 解析解分支在限位构型下覆盖不全」的独立问题，不在本 patch 范围，见 README「后续改进」。
 
 ## 交叉编译验证（固件本体）
 
@@ -58,10 +61,13 @@ Flash 占用 ≈ 50 KB / 512 KB（10%），入口不变。
 ## 复现命令
 
 ```bash
-# 1) 交叉编译修复版固件（工具链见上级 README）
+# 1) 交叉编译修复版固件（工具链见上级 README；此处为在仓库外独立复现的示意）
 #    在 zero-robotic-arm/2. Software/robot/ 下替换 robot_kinematics.c 后 make
 
-# 2) PC 端回归验证（需 gcc）
+# 2) PC 端回归验证（需 gcc，推荐直接 make）
+make && ./verify_patched
+make diag_patch && ./diag_patch
+# 等价手动命令：
 gcc -std=gnu11 -O2 verify_patched.c -lm -o verify_patched && ./verify_patched
 gcc -std=gnu11 -O2 diag_patch.c -lm -o diag_patch && ./diag_patch
 ```
