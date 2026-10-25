@@ -18,7 +18,6 @@
 # 下载 xPack GNU Arm Embedded GCC 并解压到本地（示例为 13.2.1）
 curl -L -o arm-gcc.tar.gz \
   https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1/xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
-# 下载 xPack GNU Arm Embedded GCC 并解压到本地（示例为 13.2.1）
 tar xzf arm-gcc.tar.gz
 ```
 
@@ -75,10 +74,10 @@ gcc -std=gnu11 -O2 verify_fix.c -lm -o verify_fix && ./verify_fix
 - 末端姿态误差 < 0.04°（旋转解非常精确）
 - 但约 9% 的点末端位置误差很大（最大 ~354 mm）
 
-**(3) 缺陷定位（数据驱动）**：对误差大的点逐组检查内部 4 组解，发现**其中 3 组位置误差精确为 0 mm，只有 1 组是误差上百 mm 的伪根**，而固件的最优解选择（`robot_kinematics_get_optimal_result`）**只按"与当前关节角加权距离"挑选、不校验末端位置**，于是约 9% 情况下选到了伪根。
+**(3) 缺陷定位（数据驱动）**：对误差大的点逐组检查内部 4 组解，发现**其中 3 组位置误差精确为 0 mm，只有 1 组是误差上百 mm 的伪根**，而固件的最优解选择（`robot_kinematics_get_optimal_result`）**只按“与当前关节角加权距离”挑选、不校验末端位置**，于是约 9% 情况下选到了伪根。
 
 - 伪根来源：`theta2` 用半角法（`u=tan(θ/2)`）平方求解时引入的额外根；
-- 修复验证：在选解中增加一次"正运动学末端位置残差 < 1 mm"的过滤，500 组随机点：
+- 修复验证：在选解中增加一次“正运动学末端位置残差 < 1 mm”的过滤，500 组随机点：
 
 ```
 固件原始（仅按关节角距离选解）：位置误差 <1mm 占 91.1%，最大 354 mm
@@ -96,6 +95,35 @@ gcc -std=gnu11 -O2 verify_fix.c -lm -o verify_fix && ./verify_fix
 
 已生成的修复版可烧录固件：`zero_robotic_arm_stm32f407_fix.bin/.elf`（见交付文件）。
 
+### 仍有 62 组“真解被判无解” → patch2（θ1 双分支）+ 数值 IK
+
+把 patch1 放到完整 500 组回归后发现：位置校验能保证**被接受的解都正确**，但仍有 **62 组目标明明可达，`robot_kinematics_inverse` 却返回 -1**。诊断结论：
+
+- 这 62 个点的臂部构型（θ2/θ3）解析值与真解完全一致，**唯一差别在 θ1**；
+- θ1 用半角法 `u=tan(θ/2)` 求根后，原代码用 `if (fabs(py-eq2)>ERR) u=-u;` 做一次性二选一。该判据在边界情况下选错符号，且只保留一个根，错选即漏解；
+- 62 个点的正确 θ1 **全部**是固件给出值的另一个符号根（`−θ1`），`θ1±π` 分支贡献为 0。
+
+**修复（patch2，[`patch2/`](patch2/)）**：对每个 (θ2,θ3) 显式枚举 θ1 的两个几何根（`u=+√` 与 `u=−√`，即 θ1 与 −θ1），各自重算腕部，候选解由 4 增至 8，统一由 patch1 的位置校验 + 限位 + 关节距离选解。补丁为最小侵入，仅改 `RESULT_NUM`、`calc_theta2`、`calc_theta1` 三处。
+
+```
+patch1（4 候选）：438/500 成功，62 组无解
+patch2（8 候选，枚举 θ1 两支）：500/500 成功，位置误差 100% <1mm（最大 0.0119 mm，平均 0.00021 mm）
+```
+
+**数值 IK 第二保险（[`numeric_ik/`](numeric_ik/)）**：与解析法完全独立的阻尼最小二乘（DLS）6 轴数值逆解，可在解析 8 候选全部无效时兜底。同一批 62 个失败点上：
+
+```
+数值 IK 真解种子自检：500/500（最大位置误差 0.0000 mm）
+解析失败点数值兜底：62/62（位置 max 0.988 mm / 平均 0.254 mm，姿态 max 0.108° / 平均 0.0095°）
+综合成功率：500/500 = 100%
+```
+
+patch2 与 numeric_ik 相互独立、任一条都可单独达成 100%；建议默认走 patch2 解析、numeric_ik 作为可选兜底。
+
+patch2 已交叉编译零错误，可烧录固件：`zero_robotic_arm_stm32f407_patch2.bin/.elf`（51,880 B；text 51,772 B / data 96 B / BSS 23,200 B，`g_robot_kinematics` 结构体大小 0x104=260 B，即由 4 候选 140 B 扩为 8 候选 260 B）。
+
+> 数值 IK 关键点：误差定义为 `e = x_target − x_fk(q)`，其差分为 `−J`，故数值雅可比必须取负 `J[:,i] = −(e(q+δ)−e(q−δ))/(2δ)`，否则 DLS 反向发散。
+
 ---
 
 ## 文件说明
@@ -111,12 +139,22 @@ stm32_firmware/
 │   ├── main.c               # 复位位姿反算 + 可达性
 │   ├── roundtrip.c          # FK→IK 闭环往返验证
 │   └── verify_fix.c         # 选解缺陷定位 + 位置校验修复验证（口径：手动位置校验）
-├── patch/                   # IK 选解缺陷修复（已落地、可审阅、已验证）
+├── patch/                   # patch1：IK 选解位置残差校验（已落地、可审阅、已验证）
 │   ├── ik_select_fix.patch  # diff -u 统一格式补丁
 │   ├── robot_kinematics.c   # 打补丁后的固件源码
 │   ├── verify_patched.c     # 回归验证（口径：完整 robot_kinematics_inverse）
 │   ├── diag_patch.c         # 无解点诊断（伪根 vs 真解超限位）
 │   └── README.md
+├── patch2/                  # patch2：θ1 双分支（候选 4→8），修复 62 组可达却无解
+│   ├── ik_theta1_dualbranch.patch  # patch1 ↔ patch2 统一格式 diff（最小侵入，约 100 行）
+│   ├── robot_kinematics.c/.h       # 打补丁后的固件源码（RESULT_NUM=8）
+│   ├── verify_patch2.c / Makefile  # 500 组回归（make && ./verify_patch2）
+│   └── README.md
+├── numeric_ik/              # 数值 IK 兜底（DLS 阻尼最小二乘，独立第二保险）
+│   ├── numeric_ik.c/.h      # FK + 数值雅可比 + DLS + 多起点
+│   ├── verify_numeric_ik.c / Makefile  # 500 组验证（make && ./verify_numeric_ik）
+│   └── README.md
 ├── zero_robotic_arm_stm32f407.bin/.elf        # 已交叉编译固件（原版）
-└── zero_robotic_arm_stm32f407_fix.bin/.elf    # 已交叉编译固件（修复版）
+├── zero_robotic_arm_stm32f407_fix.bin/.elf    # patch1（位置校验）
+└── zero_robotic_arm_stm32f407_patch2.bin/.elf # patch2（θ1 双分支，推荐）
 ```
