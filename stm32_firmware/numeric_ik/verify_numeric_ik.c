@@ -132,7 +132,7 @@ int main(void)
                     float diff=0;
                     for (int j=0;j<6;j++)
                         diff += ang_dist(cand[j],qd[j], (j==0||j==5))*joint_weight[j];
-                    if (diff<best_diff){best_diff=memcpy(best,cand,sizeof(best));best_pe=pe;best_re=re;got=1;}
+                    if (diff<best_diff){best_diff=diff;memcpy(best,cand,sizeof(best));best_pe=pe;best_re=re;got=1;}
                 }
             }
             /* 种子 2：限位内固定种子 */
@@ -143,7 +143,7 @@ int main(void)
                     float diff=0;
                     for (int j=0;j<6;j++)
                         diff += ang_dist(cand[j],qd[j], (j==0||j==5))*joint_weight[j];
-                    if (diff<best_diff){best_diff=0;memcpy(best,cand,sizeof(best));best_pe=pe;best_re=re;got=1;}
+                    if (diff<best_diff){best_diff=diff;memcpy(best,cand,sizeof(best));best_pe=pe;best_re=re;got=1;}
                 }
             }
             if (got) {
