@@ -1,0 +1,101 @@
+--- robot_kinematics/patch1/robot_kinematics.h	2026-10-24 23:40:20.552869000 +0800
++++ robot_kinematics/patch2/robot_kinematics.h	2026-10-25 16:01:49.841203000 +0800
+@@ -7,8 +7,9 @@
+ extern "C" {    
+ #endif
+ 
+-#define ROBOT_KINEMATICS_RESULT_NUM   (4U) /* 解算结果数量 */
++#define ROBOT_KINEMATICS_RESULT_NUM   (8U) /* 解算结果数量（patch1 为 4；patch2 枚举 θ1 两支） */
+ #define T_ROW_COL                     (4U) /* DH参数矩阵行列数 */
++/* 8 候选索引：index = θ3idx*4 + θ2idx*2 + θ1idx（θ3/θ2/θ1 各两支） */
+ 
+ struct robot_kinematics {
+
+--- robot_kinematics/patch1/robot_kinematics.c	2026-10-24 23:40:20.532574000 +0800
++++ robot_kinematics/patch2/robot_kinematics.c	2026-10-25 16:02:48.853571000 +0800
+@@ -87,57 +87,50 @@
+ 
+ static void robot_kinematics_calc_theta2(void)
+ {
+-	// 前4个theta3是同解，后4个theta3是同解
+-	float theta3 = 0;
+-	float theta2_1 = 0;
+-	float theta2_2 = 0;
+-
+-	theta3 = g_robot_kinematics.result[0][ROBOT_JOINT_3];
+-	__robot_kinematics_calc_theta2(theta3, &theta2_1, &theta2_2);
+-	g_robot_kinematics.result[0][ROBOT_JOINT_2] = theta2_1;
+-	g_robot_kinematics.result[1][ROBOT_JOINT_2] = theta2_2;
+-
+-	theta3 = g_robot_kinematics.result[2][ROBOT_JOINT_3];
+-	__robot_kinematics_calc_theta2(theta3, &theta2_1, &theta2_2);
+-	g_robot_kinematics.result[2][ROBOT_JOINT_2] = theta2_1;
+-	g_robot_kinematics.result[3][ROBOT_JOINT_2] = theta2_2;
++	// patch2：每个 θ3 分支占 4 个槽，θ2 两支各重复 2 槽（供 θ1 正/负两支）
++	for (int t3i = 0; t3i < 2; t3i++) {
++		int base = t3i * 4;
++		float theta3 = g_robot_kinematics.result[base][ROBOT_JOINT_3];
++		float theta2_1 = 0;
++		float theta2_2 = 0;
++		__robot_kinematics_calc_theta2(theta3, &theta2_1, &theta2_2);
++		g_robot_kinematics.result[base + 0][ROBOT_JOINT_2] = theta2_1;
++		g_robot_kinematics.result[base + 1][ROBOT_JOINT_2] = theta2_1;
++		g_robot_kinematics.result[base + 2][ROBOT_JOINT_2] = theta2_2;
++		g_robot_kinematics.result[base + 3][ROBOT_JOINT_2] = theta2_2;
++	}
+ }
+ 
++/* patch2：返回 θ1 半角“正根”（u=+√），不再用 py 做二选一；
++ * 负根（−θ1）由 robot_kinematics_calc_theta1 显式枚举，两支最后统一
++ * 由末端位置残差校验裁决。 */
+ static float __robot_kinematics_calc_theta1(float theta2, float theta3)
+-{	
++{
+ 	float px = g_robot_kinematics.T[0][3];
+-	float py = g_robot_kinematics.T[1][3];
+-
+-	float diff_theta2_3 = theta2 - theta3;
+-	float cos_diff_theta2_3 = cos(diff_theta2_3);
+-	float sin_diff_theta2_3 = sin(diff_theta2_3);
+-	float cos_theta2 = cos(theta2);
+-	float sin_theta2 = sin(theta2);
+-	float cos_theta3 = cos(theta3);
+-	float sin_theta3 = sin(theta3);
+ 
+-
+-	float eq1 = a2*cos_theta2 + a3*cos_diff_theta2_3 + d4*sin_diff_theta2_3;
+-	float u_theta1 = sqrt((-px + eq1)/(px + eq1));
+-
+-	float eq2 = (2*u_theta1*(cos_theta2*(a2 + a3*cos_theta3 - d4*sin_theta3) + sin_theta2*(d4*cos_theta3 + a3*sin_theta3))) / (pow(u_theta1, 2) + 1);
+-	
+-	// u_theta1需满足(eq2 == py)
+-	if (fabs(py - eq2) > ROBOT_ERROR_RANGE) {
+-		u_theta1 = -u_theta1;
++	float eq1 = a2*cos(theta2) + a3*cos(theta2 - theta3) + d4*sin(theta2 - theta3);
++	float denom = px + eq1;
++	float numer = -px + eq1;
++	float u_theta1;
++	if (fabs(denom) < 1e-9f) {
++		u_theta1 = (numer >= 0.0f) ? 1e9f : 0.0f;
++	} else {
++		float ratio = numer / denom;
++		if (ratio < 0.0f) ratio = 0.0f;	// 物理上不可达的分支，交给位置校验剔除
++		u_theta1 = sqrt(ratio);
+ 	}
+-
+ 	float theta1 = atan(u_theta1) * 2;
+-
+ 	return theta1;
+ }
+ 
+ static void robot_kinematics_calc_theta1(void)
+ {
++	// patch2：每个 (θ2,θ3) 槽枚举 θ1 正/负两个几何根（偶数 index 正根、奇数负根）
+ 	for (int i = 0; i < ROBOT_KINEMATICS_RESULT_NUM; i++) {
+ 		float theta2 = g_robot_kinematics.result[i][ROBOT_JOINT_2];
+ 		float theta3 = g_robot_kinematics.result[i][ROBOT_JOINT_3];
+-		g_robot_kinematics.result[i][ROBOT_JOINT_1] = __robot_kinematics_calc_theta1(theta2, theta3);
++		float theta1_pos = __robot_kinematics_calc_theta1(theta2, theta3);
++		g_robot_kinematics.result[i][ROBOT_JOINT_1] = (i % 2 == 0) ? theta1_pos : -theta1_pos;
+ 	}
+ }

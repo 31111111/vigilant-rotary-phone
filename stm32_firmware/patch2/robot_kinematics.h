@@ -4,14 +4,12 @@
 #include "robot.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C" {    
 #endif
 
-/* patch2：θ1 双分支后，候选解数量由 4 增至 8
- *   索引 index = θ3idx*4 + θ2idx*2 + θ1idx
- *   θ3idx∈{0,1}（θ3 半角两支）、θ2idx∈{0,1}（θ2 两支）、θ1idx∈{0,1}（θ1 两支） */
-#define ROBOT_KINEMATICS_RESULT_NUM   (8U) /* 解算结果数量（patch1 为 4） */
+#define ROBOT_KINEMATICS_RESULT_NUM   (8U) /* 解算结果数量（patch1 为 4；patch2 枚举 θ1 两支） */
 #define T_ROW_COL                     (4U) /* DH参数矩阵行列数 */
+/* 8 候选索引：index = θ3idx*4 + θ2idx*2 + θ1idx（θ3/θ2/θ1 各两支） */
 
 struct robot_kinematics {
     float T[T_ROW_COL][T_ROW_COL];                                  /* 目标T矩阵 */
