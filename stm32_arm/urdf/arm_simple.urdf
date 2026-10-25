@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  6 自由度机械臂 · 简化几何模型（无 STL 依赖）
+  ============================================================
+  运动学（各 joint origin / axis / limit）与官方 arm.urdf 逐字一致；
+  仅把 mesh 视觉替换为基础 box/cylinder，并去掉 collision，
+  使仓库 clone 后无需任何二进制网格即可加载、运行仿真。
+
+  关键工程点：
+    PyBullet 的 calculateInverseKinematics 把末端目标施加到末端 link
+    的【惯性系原点(inertial origin / 质心)】，而 getLinkState(ee)[0]
+    返回的是 link 坐标系原点。二者若不重合，会产生一个等于质心偏移的
+    常量位置误差。因此 ee_link 的 inertial origin 必须设为 (0,0,0)，
+    使“控制目标点”与“测量点”都落在末端法兰原点。其余 link 因不作为
+    IK 目标点，保留官方真实质量/质心/惯量。
+-->
+<robot name="six_dof_arm_simple">
+
+  <!-- 颜色：工业橙臂身 / 深灰底座 / 银灰腕 / 蓝末端 -->
+  <material name="arm_orange"><color rgba="0.95 0.66 0.10 1"/></material>
+  <material name="base_dark"><color rgba="0.25 0.27 0.30 1"/></material>
+  <material name="wrist_silver"><color rgba="0.73 0.74 0.76 1"/></material>
+  <material name="tip_blue"><color rgba="0.18 0.45 0.85 1"/></material>
+
+  <!-- ===================== base_link ===================== -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-6.6227e-05 -0.0001623 0.058926" rpy="0 0 0"/>
+      <mass value="0.55388"/>
+      <inertia ixx="0.00125396" ixy="6.3050e-07" ixz="4.3730e-06"
+               iyy="0.00125390" iyz="-4.0197e-06" izz="0.00072132"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.085" length="0.035"/></geometry>
+      <origin xyz="0 0 0.0175" rpy="0 0 0"/>
+      <material name="base_dark"/>
+    </visual>
+    <visual>
+      <geometry><cylinder radius="0.052" length="0.12"/></geometry>
+      <origin xyz="0 0 0.085" rpy="0 0 0"/>
+      <material name="base_dark"/>
+    </visual>
+    <visual>
+      <geometry><cylinder radius="0.062" length="0.02"/></geometry>
+      <origin xyz="0 0 0.156" rpy="0 0 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+
+  <!-- ===================== link1 ===================== -->
+  <link name="link1">
+    <inertial>
+      <origin xyz="0.000159 -0.024341 -0.017707" rpy="0 0 0"/>
+      <mass value="0.060847"/>
+      <inertia ixx="3.7007e-05" ixy="-1.1578e-07" ixz="-3.2600e-08"
+               iyy="2.5679e-05" iyz="1.1029e-05" izz="3.8776e-05"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.058" length="0.04"/></geometry>
+      <origin xyz="0 0 0.02" rpy="0 0 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+  <joint name="joint1" type="continuous">
+    <origin xyz="0 0 0.166" rpy="0 0 1.5708"/>
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <!-- ===================== link2（大臂，长 0.2） ===================== -->
+  <link name="link2">
+    <inertial>
+      <origin xyz="0.100017 0.000107 -0.010784" rpy="0 0 0"/>
+      <mass value="0.433546"/>
+      <inertia ixx="0.00014043" ixy="-5.9421e-08" ixz="1.1298e-06"
+               iyy="0.00105046" iyz="4.8685e-08" izz="0.00104173"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.205 0.05 0.046"/></geometry>
+      <origin xyz="0.1025 0 0" rpy="0 0 0"/>
+      <material name="arm_orange"/>
+    </visual>
+    <visual>
+      <geometry><cylinder radius="0.045" length="0.055"/></geometry>
+      <origin xyz="0 0 0" rpy="0 1.5708 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+  <joint name="joint2" type="revolute">
+    <origin xyz="0 0 0" rpy="1.5708 -1.5708 0"/>
+    <parent link="link1"/>
+    <child link="link2"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.5708" upper="1.5708" effort="0" velocity="0"/>
+  </joint>
+
+  <!-- ===================== link3（小臂，沿 -y 0.1845） ===================== -->
+  <link name="link3">
+    <inertial>
+      <origin xyz="0.041317 -0.047993 -0.010945" rpy="0 0 0"/>
+      <mass value="0.163444"/>
+      <inertia ixx="0.00013214" ixy="2.7061e-05" ixz="-1.5329e-05"
+               iyy="7.6101e-05" iyz="4.0549e-05" izz="0.00013352"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.048 0.195 0.042"/></geometry>
+      <origin xyz="0.024 -0.092 0" rpy="0 0 0"/>
+      <material name="arm_orange"/>
+    </visual>
+    <visual>
+      <geometry><cylinder radius="0.04" length="0.05"/></geometry>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+  <joint name="joint3" type="revolute">
+    <origin xyz="0.2 0 0" rpy="-3.1416 0 1.5708"/>
+    <parent link="link2"/>
+    <child link="link3"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="3.1416" effort="0" velocity="0"/>
+  </joint>
+
+  <!-- ===================== link4（腕） ===================== -->
+  <link name="link4">
+    <inertial>
+      <origin xyz="-2.8161e-05 -0.006828 0.029946" rpy="0 0 0"/>
+      <mass value="0.178466"/>
+      <inertia ixx="0.00010542" ixy="-1.5649e-07" ixz="-1.1763e-07"
+               iyy="0.00011129" iyz="-4.1201e-07" izz="4.4231e-05"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.034" length="0.05"/></geometry>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+  <joint name="joint4" type="continuous">
+    <origin xyz="0.047631 -0.1845 0" rpy="-1.5708 0"/>
+    <parent link="link3"/>
+    <child link="link4"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <!-- ===================== link5（腕到法兰，沿 -y 0.125） ===================== -->
+  <link name="link5">
+    <inertial>
+      <origin xyz="0.000156 -0.061792 -0.010025" rpy="0 0 0"/>
+      <mass value="0.157932"/>
+      <inertia ixx="0.00013593" ixy="-6.3313e-08" ixz="8.3886e-09"
+               iyy="5.6008e-05" iyz="3.9665e-05" izz="0.00012146"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.042 0.13 0.042"/></geometry>
+      <origin xyz="0 -0.062 0" rpy="0 0 0"/>
+      <material name="wrist_silver"/>
+    </visual>
+  </link>
+  <joint name="joint5" type="revolute">
+    <origin xyz="0 0 0" rpy="1.5708 -1.5708 0"/>
+    <parent link="link4"/>
+    <child link="link5"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.5708" upper="0" effort="0" velocity="0"/>
+  </joint>
+
+  <!-- ===================== ee_link（末端法兰） ===================== -->
+  <link name="ee_link">
+    <!-- 惯性原点强制为 0：与 IK 末端目标点/测量点重合（见文件头说明） -->
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.0088164"/>
+      <inertia ixx="6.5293e-07" ixy="0" ixz="0"
+               iyy="6.5293e-07" iyz="0" izz="9.3068e-07"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.03" length="0.022"/></geometry>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <material name="tip_blue"/>
+    </visual>
+    <visual>
+      <geometry><box size="0.012 0.03 0.05"/></geometry>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <material name="tip_blue"/>
+    </visual>
+  </link>
+  <joint name="joint6" type="continuous">
+    <origin xyz="0 -0.125 0" rpy="1.5708 0 0"/>
+    <parent link="link5"/>
+    <child link="ee_link"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+</robot>
