@@ -137,7 +137,7 @@
     </visual>
   </link>
   <joint name="joint4" type="continuous">
-    <origin xyz="0.047631 -0.1845 0" rpy="-1.5708 0"/>
+    <origin xyz="0.047631 -0.1845 0" rpy="-1.5708 0 0"/>
     <parent link="link3"/>
     <child link="link4"/>
     <axis xyz="0 0 1"/>

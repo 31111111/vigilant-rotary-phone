@@ -1,5 +1,5 @@
---- robot_kinematics/patch1/robot_kinematics.h	2026-10-24 23:40:20.552869000 +0800
-+++ robot_kinematics/patch2/robot_kinematics.h	2026-10-25 16:01:49.841203000 +0800
+--- a/Core/Inc/robot_kinematics.h
++++ b/Core/Inc/robot_kinematics.h
 @@ -7,8 +7,9 @@
  extern "C" {    
  #endif
@@ -10,9 +10,10 @@
 +/* 8 候选索引：index = θ3idx*4 + θ2idx*2 + θ1idx（θ3/θ2/θ1 各两支） */
  
  struct robot_kinematics {
+     float T[T_ROW_COL][T_ROW_COL];                                  /* 目标T矩阵 */
 
---- robot_kinematics/patch1/robot_kinematics.c	2026-10-24 23:40:20.532574000 +0800
-+++ robot_kinematics/patch2/robot_kinematics.c	2026-10-25 16:02:48.853571000 +0800
+--- a/Core/Src/robot_kinematics.c
++++ b/Core/Src/robot_kinematics.c
 @@ -87,57 +87,50 @@
  
  static void robot_kinematics_calc_theta2(void)
@@ -99,3 +100,4 @@
 +		g_robot_kinematics.result[i][ROBOT_JOINT_1] = (i % 2 == 0) ? theta1_pos : -theta1_pos;
  	}
  }
+
