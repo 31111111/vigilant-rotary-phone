@@ -18,14 +18,17 @@
 
 ## 效果演示
 
-| 视频 | 内容 |
-|---|---|
-| `stm32_6dof_circle_lite.mp4` | **STM32 6DOF 末端在 YZ 平面画圆（简化几何，无 STL）** |
-| `stm32_6dof_grasp.mp4` | **STM32 6DOF 抓取-搬运：绿方块从近台搬到远台** |
-| `kuka_iiwa_ik.mp4` | KUKA iiwa 末端画圆（半径 0.30 m） |
-| `kuka_iiwa_grasp.mp4` | KUKA 抓取-搬运，落点偏差 0.001 m |
-| `stm32_6dof_arm.mp4` | STM32 6DOF 画圆（官方 mesh 版） |
-| `vision_arm/vision_guided_pickplace.mp4` | **视觉引导抓取-搬运闭环（138 帧，视觉定位误差 0.67 mm）** |
+> **说明**：演示视频为二进制文件，为控制仓库体积未纳入版本库（文本推送通道无法传二进制）。
+> 请运行对应脚本自行生成（`vision_arm/main.py` 直接产出 mp4），或在本仓库 Releases 页下载。
+
+| 视频 | 内容 | 生成方式 |
+|---|---|---|
+| `stm32_6dof_circle_lite.mp4` | **STM32 6DOF 末端在 YZ 平面画圆（简化几何，无 STL）** | 运行 `stm32_6dof_arm_demo_lite.py` |
+| `stm32_6dof_grasp.mp4` | **STM32 6DOF 抓取-搬运：绿方块从近台搬到远台** | 运行 `stm32_6dof_arm_grasp_demo.py` |
+| `kuka_iiwa_ik.mp4` | KUKA iiwa 末端画圆（半径 0.30 m） | 运行 `kuka_iiwa_ik_demo.py` |
+| `kuka_iiwa_grasp.mp4` | KUKA 抓取-搬运，落点偏差 0.001 m | 运行 `kuka_iiwa_grasp_demo.py` |
+| `stm32_6dof_arm.mp4` | STM32 6DOF 画圆（官方 mesh 版） | 运行 `stm32_6dof_arm_demo.py` |
+| `vision_arm/vision_guided_pickplace.mp4` | **视觉引导抓取-搬运闭环（138 帧，视觉定位误差 0.67 mm）** | `cd vision_arm && python main.py` |
 
 ## 运行环境
 
@@ -179,7 +182,7 @@ python error_analysis.py  # 蒙特卡洛误差  → output/05_error_analysis.png
 │   ├── arm_kinematics.py           # 平面两连杆 IK / FK
 │   ├── main.py                     # 九阶段抓取闭环
 │   └── error_analysis.py           # 100 次蒙特卡洛误差分析
-├── *.mp4                            # 演示视频
+├── *.mp4                            # 演示视频（运行后生成，不入库）
 └── frames_lite/ frames_6dof_grasp/  # 逐帧渲染（运行后生成）
 ```
 
